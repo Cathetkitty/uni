@@ -1,7 +1,7 @@
 
-const CACHE_NAME = "unimart-offline-v1";
+const CACHE_NAME = "unimart-offline-v3";
 
-const FILES_TO_CACHE = [
+const APP_FILES = [
     "./",
     "./index.html",
     "./login.html",
@@ -10,151 +10,84 @@ const FILES_TO_CACHE = [
     "./script.js"
 ];
 
-// INSTALL SERVICE WORKER
+// INSTALL
 self.addEventListener("install", event => {
-
     event.waitUntil(
-
-        caches.open(CACHE_NAME)
-
-            .then(cache => {
-                return cache.addAll(FILES_TO_CACHE);
-            })
-
-            .then(() => self.skipWaiting())
-
+        caches.open(CACHE_NAME).then(async cache => {
+            for (const file of APP_FILES) {
+                try {
+                    await cache.add(file);
+                    console.log("Cached:", file);
+                } catch (error) {
+                    console.warn("File not cached:", file);
+                }
+            }
+        }).then(() => self.skipWaiting())
     );
-
 });
 
-// ACTIVATE SERVICE WORKER
+// ACTIVATE
 self.addEventListener("activate", event => {
-
     event.waitUntil(
-
-        caches.keys().then(keys => {
-
-            return Promise.all(
-
-                keys.map(key => {
-
-                    if (
+        caches.keys().then(keys =>
+            Promise.all(
+                keys
+                    .filter(key =>
                         key.startsWith("unimart-") &&
                         key !== CACHE_NAME
-                    ) {
-                        return caches.delete(key);
-                    }
-
-                })
-
-            );
-
-        }).then(() => self.clients.claim())
-
+                    )
+                    .map(key => caches.delete(key))
+            )
+        ).then(() => self.clients.claim())
     );
-
 });
 
-// FETCH CACHED FILES
+// FETCH
 self.addEventListener("fetch", event => {
-
     const request = event.request;
 
-    if (request.method !== "GET") {
-        return;
-    }
+    if (request.method !== "GET") return;
 
     const url = new URL(request.url);
 
-    // Handle other websites separately
-    if (url.origin !== self.location.origin) {
+    if (url.origin !== self.location.origin) return;
 
-        event.respondWith(
-
-            caches.match(request).then(cached => {
-
-                return cached ||
-                    fetch(request).catch(() => Response.error());
-
-            })
-
-        );
-
-        return;
-    }
-
-    // Handle HTML navigation
     if (request.mode === "navigate") {
-
         event.respondWith(
-
             fetch(request)
-
                 .then(response => {
-
                     if (response.ok) {
-
                         const copy = response.clone();
-
                         caches.open(CACHE_NAME).then(cache => {
                             cache.put(request, copy);
                         });
-
                     }
-
                     return response;
-
                 })
-
                 .catch(async () => {
-
                     return (
                         await caches.match(request) ||
                         await caches.match("./index.html") ||
                         Response.error()
                     );
-
                 })
-
         );
-
         return;
     }
 
-    // Handle CSS, JavaScript, images and other assets
     event.respondWith(
-
         caches.match(request).then(cached => {
+            if (cached) return cached;
 
-            if (cached) {
-                return cached;
-            }
-
-            return fetch(request)
-
-                .then(response => {
-
-                    if (
-                        response.ok ||
-                        response.type === "opaque"
-                    ) {
-
-                        const copy = response.clone();
-
-                        caches.open(CACHE_NAME).then(cache => {
-                            cache.put(request, copy);
-                        });
-
-                    }
-
-                    return response;
-
-                })
-
-                .catch(() => Response.error());
-
+            return fetch(request).then(response => {
+                if (response.ok) {
+                    const copy = response.clone();
+                    caches.open(CACHE_NAME).then(cache => {
+                        cache.put(request, copy);
+                    });
+                }
+                return response;
+            }).catch(() => Response.error());
         })
-
     );
-
 });
